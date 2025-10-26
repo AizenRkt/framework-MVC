@@ -1,3 +1,0 @@
-c:\Users\andyp\OneDrive\Bureau\ITU\S5\framework\framework-MVC\src\main\java\etu\sprint\framework\FrontServlet.java
-c:\Users\andyp\OneDrive\Bureau\ITU\S5\framework\framework-MVC\src\main\java\etu\sprint\framework\annotation\AnnotationMethod.java
-c:\Users\andyp\OneDrive\Bureau\ITU\S5\framework\framework-MVC\src\main\java\etu\sprint\framework\annotation\AnnotationType.java
