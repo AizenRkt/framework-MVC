@@ -1,4 +1,4 @@
-package etu.sprint.framework;
+package etu.sprint.framework.annotation;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -7,6 +7,6 @@ import java.lang.annotation.Target;
 
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
-public @interface Annotateur {
+public @interface AnnotationMethod {
     String value() default "";
 }
