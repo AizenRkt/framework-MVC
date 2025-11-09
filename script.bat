@@ -76,48 +76,4 @@ if %errorlevel% neq 0 (
 )
 echo framework.jar cree dans WEB-INF/lib.
 
-:: ============================================================================
-:: 4. Compilation du Projet de Test
-:: ============================================================================
-echo Compilation du projet de test...
-set "TEST_SOURCES_FILE=%BUILD_DIR%\test_sources.txt"
-dir /s /b "%TEST_PROJECT_DIR%\src\main\java\*.java" > "%TEST_SOURCES_FILE%"
-for %%A in ("%TEST_SOURCES_FILE%") do set "FileSize=%%~zA"
-if !FileSize! gtr 0 (
-    javac -d "%TEST_CLASSES_DIR%" -cp "%FRAMEWORK_JAR%;!FULL_CLASSPATH!" @"%TEST_SOURCES_FILE%"
-    if !errorlevel! neq 0 (
-        echo Erreur lors de la compilation du projet de test.
-        pause
-        exit /b 1
-    )
-)
-echo Projet de test compile.
-
-:: ============================================================================
-:: 5. Création du WAR
-:: ============================================================================
-echo Creation du fichier %WAR_FILE_NAME%...
-cd "%TEST_PROJECT_DIR%\src\main\webapp"
-jar -c -f "%DEPLOY_DIR%\%WAR_FILE_NAME%" .
-cd "%FRAMEWORK_DIR%"
-if %errorlevel% neq 0 (
-    echo Erreur lors de la creation du WAR.
-    pause
-    exit /b 1
-)
-echo Fichier WAR cree et copie dans Tomcat/webapps.
-
-:: ============================================================================
-:: 6. Redémarrage de Tomcat
-:: ============================================================================
-echo Redemarrage de Tomcat...
-call "%TOMCAT_HOME%\bin\shutdown.bat"
-echo Attente de l'arret de Tomcat...
-timeout /t 5 >nul
-call "%TOMCAT_HOME%\bin\startup.bat"
-
-echo Tomcat redemarre.
-echo Deploiement termine. Accedez a : http://localhost:8080/%PROJECT_NAME%/hello
-
 endlocal
-pause
