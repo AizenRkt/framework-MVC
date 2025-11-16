@@ -102,6 +102,8 @@ public class FrontServlet extends HttpServlet {
                     out.println("<h1>Erreur : la méthode ne retourne pas un String</h1>");
                     out.println("</body></html>");
                 }
+            } else {
+                out.println("<p>Aucune méthode correspondante trouvée pour l’URL.</p>");
             }
 
         } else {
