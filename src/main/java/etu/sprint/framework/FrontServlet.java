@@ -1,139 +1,115 @@
 package etu.sprint.framework;
 
-import etu.sprint.framework.annotation.AnnotationType;
-import etu.sprint.framework.annotation.AnnotationMethod;
-
+import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.*;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.lang.reflect.Method;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.util.*;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
+import java.lang.reflect.InvocationTargetException;
+import java.util.Map;
+
+import etu.sprint.framework.scanner.*;
 
 public class FrontServlet extends HttpServlet {
 
-    // Map qui stocke les routes : URL -> (Classe, Méthode)
-    private final Map<String, MethodMapping> routeMap = new HashMap<>();
+    private Map<String, MethodMapping> routeMap;
 
     @Override
     public void init() throws ServletException {
         super.init();
+        try {
+            String basePackage = "etu.sprint.controller";
 
-        String basePackage = "etu.sprint.controller"; // ton package de contrôleurs
-        Set<Class<?>> controllers = findClassesWithAnnotation(basePackage, AnnotationType.class);
+            ScannerController scanner = new ScannerController();
+            Map<String, MethodMapping> routes = scanner.scanControllers(basePackage);
 
-        for (Class<?> controller : controllers) {
-            AnnotationType at = controller.getAnnotation(AnnotationType.class);
-            String prefix = at.value(); // préfixe de route de la classe
+            this.routeMap = routes;
+            getServletContext().setAttribute("ROUTES", routes);
 
-            for (Method method : controller.getDeclaredMethods()) {
-                if (method.isAnnotationPresent(AnnotationMethod.class)) {
-                    AnnotationMethod am = method.getAnnotation(AnnotationMethod.class);
-                    String fullPath = prefix + am.value();
-                    routeMap.put(fullPath, new MethodMapping(controller, method));
-                    System.out.println("Mapped route: " + fullPath + " -> " + controller.getName() + "." + method.getName());
-                }
+            System.out.println("=========== ROUTES DÉTECTÉES ===========");
+            for (Map.Entry<String, MethodMapping> entry : routes.entrySet()) {
+                System.out.println(
+                    "URL: " + entry.getKey() + " => " +
+                    entry.getValue().getController().getSimpleName() + "." +
+                    entry.getValue().getMethod().getName()
+                );
             }
+            System.out.println("========================================");
+        } catch (Exception e) {
+            throw new ServletException("Erreur pendant l'initialisation du FrontServlet", e);
         }
     }
 
     @Override
-    protected void service(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+    protected void service(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        if (resourceExist(request)) {
+            customServe(request, response);
+        } else {
+            try {
+                defaultServe(request, response);
+            } catch (InstantiationException | IllegalAccessException |
+                     IllegalArgumentException | InvocationTargetException |
+                     NoSuchMethodException | SecurityException e) {
+                throw new ServletException(e);
+            }
+        }
+    }
+
+    private boolean resourceExist(HttpServletRequest request) {
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        return getServletContext().getResourceAsStream(path) != null;
+    }
+
+    private void customServe(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+        request.getRequestDispatcher(request.getRequestURI().substring(request.getContextPath().length()))
+               .forward(request, response);
+    }
+
+    private void defaultServe(HttpServletRequest request, HttpServletResponse response) throws IOException, InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchMethodException, SecurityException {
 
         response.setContentType("text/html;charset=UTF-8");
-        String path = request.getRequestURI().substring(request.getContextPath().length());
-        if (path.isEmpty()) path = "/index";
+        String url = request.getRequestURI().substring(request.getContextPath().length());
 
-        MethodMapping mapping = routeMap.get(path);
-        if (mapping != null) {
-            try {
-                Object controllerInstance = mapping.controller.getDeclaredConstructor().newInstance();
-                mapping.method.invoke(controllerInstance, request, response);
-                return;
-            } catch (Exception e) {
-                throw new ServletException("Erreur lors de l'exécution du contrôleur pour l'URL : " + path, e);
-            }
-        }
+        ServletContext context = getServletContext();
+        Map<String, MethodMapping> routes = (Map<String, MethodMapping>) context.getAttribute("ROUTES");
 
-        // Si aucun contrôleur ne correspond, servir la page par défaut
-        defaultServe(request, response);
-    }
+        if (routes.containsKey(url)) {
+            MethodMapping mapping = routes.get(url);
+            Class<?> cls = mapping.getController();
+            Method method = mapping.getMethod();
 
-    private void defaultServe(HttpServletRequest request, HttpServletResponse response)
-            throws IOException {
-        try (PrintWriter out = response.getWriter()) {
-            out.println("<html><head><title>FrontServlet</title></head><body>");
-            out.println("<h1>Voici la page par défaut</h1>");
-            out.println("<p>Méthode HTTP : " + request.getMethod() + "</p>");
-            out.println("<p>URL : " + request.getRequestURL() + "</p>");
-            out.println("</body></html>");
-        }
-    }
+            if (method.getReturnType().equals(String.class)) {
 
-    // Classe interne pour stocker la paire (Classe, Méthode)
-    private static class MethodMapping {
-        Class<?> controller;
-        Method method;
+                Object instance = cls.getDeclaredConstructor().newInstance();
+                Object result = method.invoke(instance);
 
-        MethodMapping(Class<?> controller, Method method) {
-            this.controller = controller;
-            this.method = method;
-        }
-    }
+                try (PrintWriter out = response.getWriter()) {
+                    out.println("<html><head><title>FrontServlet</title></head><body>");
+                    out.println("<h1>URL trouvée</h1>");
+                    out.println("<p>URL : " + url + "</p>");
+                    out.println("<p>Contrôleur : " + cls.getSimpleName() + "</p>");
+                    out.println("<p>Méthode : " + method.getName() + "()</p>");
+                    out.println("<p>Résultat : " + result + "</p>");
+                    out.println("</body></html>");
+                }
 
-    // Méthode pour trouver toutes les classes annotées @AnnotationType
-    private Set<Class<?>> findClassesWithAnnotation(String basePackage, Class<?> annotation) {
-        Set<Class<?>> classes = new HashSet<>();
-        try {
-            String path = basePackage.replace('.', '/');
-            Enumeration<URL> resources = Thread.currentThread().getContextClassLoader().getResources(path);
-
-            while (resources.hasMoreElements()) {
-                URL resource = resources.nextElement();
-                String filePath = URLDecoder.decode(resource.getFile(), "UTF-8");
-                File dir = new File(filePath);
-
-                if (dir.exists()) {
-                    for (File file : Objects.requireNonNull(dir.listFiles())) {
-                        if (file.getName().endsWith(".class")) {
-                            String className = basePackage + '.' + file.getName().replace(".class", "");
-                            try {
-                                Class<?> cls = Class.forName(className);
-                                if (cls.isAnnotationPresent((Class) annotation)) {
-                                    classes.add(cls);
-                                }
-                            } catch (Throwable ignored) {}
-                        }
-                    }
-                } else if (filePath.contains(".jar!")) {
-                    String jarPath = filePath.substring(5, filePath.indexOf("!"));
-                    try (JarFile jar = new JarFile(jarPath)) {
-                        Enumeration<JarEntry> entries = jar.entries();
-                        while (entries.hasMoreElements()) {
-                            JarEntry entry = entries.nextElement();
-                            String name = entry.getName();
-                            if (name.startsWith(path) && name.endsWith(".class")) {
-                                String className = name.replace('/', '.').replace(".class", "");
-                                try {
-                                    Class<?> cls = Class.forName(className);
-                                    if (cls.isAnnotationPresent((Class) annotation)) {
-                                        classes.add(cls);
-                                    }
-                                } catch (Throwable ignored) {}
-                            }
-                        }
-                    }
+            } else {
+                try (PrintWriter out = response.getWriter()) {
+                    out.println("<html><body>");
+                    out.println("<h1>Erreur : la méthode ne retourne pas un String</h1>");
+                    out.println("</body></html>");
                 }
             }
-        } catch (Exception e) {
-            e.printStackTrace();
+
+        } else {
+            try (PrintWriter out = response.getWriter()) {
+                out.println("<html><head><title>404</title></head><body>");
+                out.println("<h1>404 - Not found</h1>");
+                out.println("</body></html>");
+            }
         }
-        return classes;
     }
 }
