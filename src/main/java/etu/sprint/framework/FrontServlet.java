@@ -108,15 +108,23 @@ public class FrontServlet extends HttpServlet {
         }
 
         if (method.getReturnType().equals(ModelView.class)) {
-
+                
+            System.out.println("===============model view ito=============");
             ModelView modelView = (ModelView) method.invoke(instance);
 
-            String view = modelView.getView();
-            RequestDispatcher rd = request.getRequestDispatcher(view);
+            if (modelView.getData() != null) {
+                for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
+                    request.setAttribute(entry.getKey(), entry.getValue());
+                }
+            }
 
+            String v = "/WEB-INF/views/" + modelView.getView();
+
+            RequestDispatcher rd = request.getRequestDispatcher(v);
             rd.forward(request, response);
             return;
         }
+
 
         try (PrintWriter out = response.getWriter()) {
             out.println("<html><body>");
