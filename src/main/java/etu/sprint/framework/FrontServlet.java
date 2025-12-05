@@ -105,7 +105,10 @@ public class FrontServlet extends HttpServlet {
                         value = matcher.group(i + 1);
                     } catch (IllegalStateException | IndexOutOfBoundsException ignored) {}
                     if (value != null) {
-                        pathVariables.put(varNames.get(i), value);
+                        String varName = varNames.get(i);
+                        pathVariables.put(varName, value);
+                        // mettre aussi la variable dans la requête pour que les contrôleurs puissent l'obtenir via request.getAttribute
+                        // (le request utilisé ici sera celui passé dans defaultServe)
                     }
                 }
 
@@ -138,11 +141,16 @@ public class FrontServlet extends HttpServlet {
         Method method = mapping.getMethod();
         Object instance = cls.getDeclaredConstructor().newInstance();
 
-        // Injecter les variables extraites dans les paramètres de la méthode
+        // exposer les variables d'URL dans la requête pour que les contrôleurs puissent les lire via request.getAttribute("name")
+        for (Map.Entry<String, String> e : pathVariables.entrySet()) {
+            request.setAttribute(e.getKey(), e.getValue());
+        }
+
+        // Injecter les variables extraites et objects request/response dans les paramètres de la méthode
         Object[] parameters = new Object[method.getParameterCount()];
         Class<?>[] parameterTypes = method.getParameterTypes();
 
-        // Obtenir la liste des noms de variables dans l'ordre depuis le pattern de la route
+        // Obtenir les noms des variables dans l'ordre
         List<String> varNames = new ArrayList<>();
         if (mapping.getUrlPattern() != null) {
             Matcher nm = Pattern.compile("\\{([^/}]+)\\}").matcher(mapping.getUrlPattern());
@@ -151,56 +159,50 @@ public class FrontServlet extends HttpServlet {
             }
         }
 
-        // Récupérer le mapping des paramètres annotés @MyRequestParam (index -> name)
+        // Mapping des paramètres annotés @MyRequestParam
         Map<Integer, String> annotatedParams = mapping.getRequestParamNames();
 
-        for (int i = 0; i < parameters.length; i++) {
-            // Priorité aux paramètres annotés @MyRequestParam
-            if (annotatedParams != null && annotatedParams.containsKey(i)) {
-                String reqName = annotatedParams.get(i);
-                // D'abord chercher dans les paramètres de requête (query/form)
-                String value = request.getParameter(reqName);
-                // Si absent, chercher dans les variables de chemin extraites
-                if (value == null) {
-                    value = pathVariables.get(reqName);
-                }
+        int varIndex = 0;
 
-                if (value != null) {
-                    parameters[i] = convertType(value, parameterTypes[i]);
-                } else {
-                    // si aucune valeur fournie, utiliser une valeur par défaut pour les types primitifs
-                    if (parameterTypes[i].isPrimitive()) {
-                        parameters[i] = defaultPrimitiveValue(parameterTypes[i]);
-                    } else {
-                        parameters[i] = null;
-                    }
-                }
+        for (int i = 0; i < parameters.length; i++) {
+            Class<?> pType = parameterTypes[i];
+
+            // Injection spéciale : HttpServletRequest / HttpServletResponse
+            if (HttpServletRequest.class.isAssignableFrom(pType)) {
+                parameters[i] = request;
+                continue;
+            }
+            if (HttpServletResponse.class.isAssignableFrom(pType)) {
+                parameters[i] = response;
                 continue;
             }
 
-            // Si non annoté, essayer d'utiliser les variables de chemin extraites
-            if (i < varNames.size()) {
-                String name = varNames.get(i);
+            // Priorité : paramètres annotés @MyRequestParam
+            if (annotatedParams != null && annotatedParams.containsKey(i)) {
+                String reqName = annotatedParams.get(i);
+                String value = request.getParameter(reqName);
+                if (value == null) value = pathVariables.get(reqName);
+
+                parameters[i] = convertType(value, pType);
+                continue;
+            }
+
+            // Ensuite : variables de chemin {id}, {slug}, etc.
+            if (varIndex < varNames.size()) {
+                String name = varNames.get(varIndex++);
                 String value = pathVariables.get(name);
-                if (value != null) {
-                    parameters[i] = convertType(value, parameterTypes[i]);
-                } else {
-                    if (parameterTypes[i].isPrimitive()) {
-                        parameters[i] = defaultPrimitiveValue(parameterTypes[i]);
-                    } else {
-                        parameters[i] = null;
-                    }
-                }
+                parameters[i] = convertType(value, pType);
+                continue;
+            }
+
+            // Sinon : valeur par défaut
+            if (pType.isPrimitive()) {
+                parameters[i] = defaultPrimitiveValue(pType);
             } else {
-                // Pas d'annotation et pas de variable de chemin : tenter de récupérer par nom de param (si possible)
-                // Java reflection ne fournit pas toujours le nom réel des paramètres (dépend du compile flag), donc on laisse null
-                if (parameterTypes[i].isPrimitive()) {
-                    parameters[i] = defaultPrimitiveValue(parameterTypes[i]);
-                } else {
-                    parameters[i] = null;
-                }
+                parameters[i] = null;
             }
         }
+
 
         Object result = method.invoke(instance, parameters);
 
