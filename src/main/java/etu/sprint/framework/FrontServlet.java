@@ -145,11 +145,12 @@ public class FrontServlet extends HttpServlet {
         for (Map.Entry<String, String> e : pathVariables.entrySet()) {
             request.setAttribute(e.getKey(), e.getValue());
         }
+
         // Injecter les variables extraites et objects request/response dans les paramètres de la méthode
         Object[] parameters = new Object[method.getParameterCount()];
         Class<?>[] parameterTypes = method.getParameterTypes();
 
-        // Obtenir la liste des noms de variables dans l'ordre depuis le pattern de la route
+        // Obtenir les noms des variables dans l'ordre
         List<String> varNames = new ArrayList<>();
         if (mapping.getUrlPattern() != null) {
             Matcher nm = Pattern.compile("\\{([^/}]+)\\}").matcher(mapping.getUrlPattern());
@@ -158,27 +159,50 @@ public class FrontServlet extends HttpServlet {
             }
         }
 
+        // Mapping des paramètres annotés @MyRequestParam
+        Map<Integer, String> annotatedParams = mapping.getRequestParamNames();
+
         int varIndex = 0;
+
         for (int i = 0; i < parameters.length; i++) {
             Class<?> pType = parameterTypes[i];
+
+            // Injection spéciale : HttpServletRequest / HttpServletResponse
             if (HttpServletRequest.class.isAssignableFrom(pType)) {
                 parameters[i] = request;
-            } else if (HttpServletResponse.class.isAssignableFrom(pType)) {
+                continue;
+            }
+            if (HttpServletResponse.class.isAssignableFrom(pType)) {
                 parameters[i] = response;
+                continue;
+            }
+
+            // Priorité : paramètres annotés @MyRequestParam
+            if (annotatedParams != null && annotatedParams.containsKey(i)) {
+                String reqName = annotatedParams.get(i);
+                String value = request.getParameter(reqName);
+                if (value == null) value = pathVariables.get(reqName);
+
+                parameters[i] = convertType(value, pType);
+                continue;
+            }
+
+            // Ensuite : variables de chemin {id}, {slug}, etc.
+            if (varIndex < varNames.size()) {
+                String name = varNames.get(varIndex++);
+                String value = pathVariables.get(name);
+                parameters[i] = convertType(value, pType);
+                continue;
+            }
+
+            // Sinon : valeur par défaut
+            if (pType.isPrimitive()) {
+                parameters[i] = defaultPrimitiveValue(pType);
             } else {
-                if (varIndex < varNames.size()) {
-                    String name = varNames.get(varIndex++);
-                    String value = pathVariables.get(name);
-                    if (value != null) {
-                        parameters[i] = convertType(value, pType);
-                    } else {
-                        parameters[i] = null;
-                    }
-                } else {
-                    parameters[i] = null; // pas de variable correspondante
-                }
+                parameters[i] = null;
             }
         }
+
 
         Object result = method.invoke(instance, parameters);
 
@@ -214,6 +238,13 @@ public class FrontServlet extends HttpServlet {
     }
 
     private Object convertType(String value, Class<?> targetType) {
+        if (value == null) {
+            if (targetType.isPrimitive()) {
+                return defaultPrimitiveValue(targetType);
+            }
+            return null;
+        }
+
         if (targetType.equals(Integer.class) || targetType.equals(int.class)) {
             return Integer.parseInt(value);
         } else if (targetType.equals(Double.class) || targetType.equals(double.class)) {
@@ -222,5 +253,26 @@ public class FrontServlet extends HttpServlet {
             return Boolean.parseBoolean(value);
         }
         return value;
+    }
+
+    private Object defaultPrimitiveValue(Class<?> primitiveType) {
+        if (primitiveType.equals(int.class)) {
+            return 0;
+        } else if (primitiveType.equals(double.class)) {
+            return 0.0d;
+        } else if (primitiveType.equals(boolean.class)) {
+            return false;
+        } else if (primitiveType.equals(long.class)) {
+            return 0L;
+        } else if (primitiveType.equals(float.class)) {
+            return 0f;
+        } else if (primitiveType.equals(short.class)) {
+            return (short) 0;
+        } else if (primitiveType.equals(byte.class)) {
+            return (byte) 0;
+        } else if (primitiveType.equals(char.class)) {
+            return '\u0000';
+        }
+        return null;
     }
 }
