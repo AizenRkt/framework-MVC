@@ -105,7 +105,10 @@ public class FrontServlet extends HttpServlet {
                         value = matcher.group(i + 1);
                     } catch (IllegalStateException | IndexOutOfBoundsException ignored) {}
                     if (value != null) {
-                        pathVariables.put(varNames.get(i), value);
+                        String varName = varNames.get(i);
+                        pathVariables.put(varName, value);
+                        // mettre aussi la variable dans la requête pour que les contrôleurs puissent l'obtenir via request.getAttribute
+                        // (le request utilisé ici sera celui passé dans defaultServe)
                     }
                 }
 
@@ -138,7 +141,11 @@ public class FrontServlet extends HttpServlet {
         Method method = mapping.getMethod();
         Object instance = cls.getDeclaredConstructor().newInstance();
 
-        // Injecter les variables extraites dans les paramètres de la méthode
+        // exposer les variables d'URL dans la requête pour que les contrôleurs puissent les lire via request.getAttribute("name")
+        for (Map.Entry<String, String> e : pathVariables.entrySet()) {
+            request.setAttribute(e.getKey(), e.getValue());
+        }
+        // Injecter les variables extraites et objects request/response dans les paramètres de la méthode
         Object[] parameters = new Object[method.getParameterCount()];
         Class<?>[] parameterTypes = method.getParameterTypes();
 
@@ -151,17 +158,25 @@ public class FrontServlet extends HttpServlet {
             }
         }
 
+        int varIndex = 0;
         for (int i = 0; i < parameters.length; i++) {
-            if (i < varNames.size()) {
-                String name = varNames.get(i);
-                String value = pathVariables.get(name);
-                if (value != null) {
-                    parameters[i] = convertType(value, parameterTypes[i]);
-                } else {
-                    parameters[i] = null;
-                }
+            Class<?> pType = parameterTypes[i];
+            if (HttpServletRequest.class.isAssignableFrom(pType)) {
+                parameters[i] = request;
+            } else if (HttpServletResponse.class.isAssignableFrom(pType)) {
+                parameters[i] = response;
             } else {
-                parameters[i] = null; // pas de variable correspondante
+                if (varIndex < varNames.size()) {
+                    String name = varNames.get(varIndex++);
+                    String value = pathVariables.get(name);
+                    if (value != null) {
+                        parameters[i] = convertType(value, pType);
+                    } else {
+                        parameters[i] = null;
+                    }
+                } else {
+                    parameters[i] = null; // pas de variable correspondante
+                }
             }
         }
 
