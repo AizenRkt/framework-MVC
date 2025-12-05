@@ -26,7 +26,7 @@ public class ScannerController {
                 if (method.isAnnotationPresent(AnnotationMethod.class)) {
                     AnnotationMethod am = method.getAnnotation(AnnotationMethod.class);
                     String fullPath = prefix + am.value();
-                    routes.put(fullPath, new MethodMapping(controller, method));
+                    routes.put(fullPath, new MethodMapping(controller, method, fullPath));
                     System.out.println("Mapped route: " + fullPath + " -> " + controller.getName() + "." + method.getName());
                 }
             }
