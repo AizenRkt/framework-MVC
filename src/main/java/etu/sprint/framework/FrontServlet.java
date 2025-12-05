@@ -151,17 +151,54 @@ public class FrontServlet extends HttpServlet {
             }
         }
 
+        // Récupérer le mapping des paramètres annotés @MyRequestParam (index -> name)
+        Map<Integer, String> annotatedParams = mapping.getRequestParamNames();
+
         for (int i = 0; i < parameters.length; i++) {
+            // Priorité aux paramètres annotés @MyRequestParam
+            if (annotatedParams != null && annotatedParams.containsKey(i)) {
+                String reqName = annotatedParams.get(i);
+                // D'abord chercher dans les paramètres de requête (query/form)
+                String value = request.getParameter(reqName);
+                // Si absent, chercher dans les variables de chemin extraites
+                if (value == null) {
+                    value = pathVariables.get(reqName);
+                }
+
+                if (value != null) {
+                    parameters[i] = convertType(value, parameterTypes[i]);
+                } else {
+                    // si aucune valeur fournie, utiliser une valeur par défaut pour les types primitifs
+                    if (parameterTypes[i].isPrimitive()) {
+                        parameters[i] = defaultPrimitiveValue(parameterTypes[i]);
+                    } else {
+                        parameters[i] = null;
+                    }
+                }
+                continue;
+            }
+
+            // Si non annoté, essayer d'utiliser les variables de chemin extraites
             if (i < varNames.size()) {
                 String name = varNames.get(i);
                 String value = pathVariables.get(name);
                 if (value != null) {
                     parameters[i] = convertType(value, parameterTypes[i]);
                 } else {
-                    parameters[i] = null;
+                    if (parameterTypes[i].isPrimitive()) {
+                        parameters[i] = defaultPrimitiveValue(parameterTypes[i]);
+                    } else {
+                        parameters[i] = null;
+                    }
                 }
             } else {
-                parameters[i] = null; // pas de variable correspondante
+                // Pas d'annotation et pas de variable de chemin : tenter de récupérer par nom de param (si possible)
+                // Java reflection ne fournit pas toujours le nom réel des paramètres (dépend du compile flag), donc on laisse null
+                if (parameterTypes[i].isPrimitive()) {
+                    parameters[i] = defaultPrimitiveValue(parameterTypes[i]);
+                } else {
+                    parameters[i] = null;
+                }
             }
         }
 
@@ -199,6 +236,13 @@ public class FrontServlet extends HttpServlet {
     }
 
     private Object convertType(String value, Class<?> targetType) {
+        if (value == null) {
+            if (targetType.isPrimitive()) {
+                return defaultPrimitiveValue(targetType);
+            }
+            return null;
+        }
+
         if (targetType.equals(Integer.class) || targetType.equals(int.class)) {
             return Integer.parseInt(value);
         } else if (targetType.equals(Double.class) || targetType.equals(double.class)) {
@@ -207,5 +251,26 @@ public class FrontServlet extends HttpServlet {
             return Boolean.parseBoolean(value);
         }
         return value;
+    }
+
+    private Object defaultPrimitiveValue(Class<?> primitiveType) {
+        if (primitiveType.equals(int.class)) {
+            return 0;
+        } else if (primitiveType.equals(double.class)) {
+            return 0.0d;
+        } else if (primitiveType.equals(boolean.class)) {
+            return false;
+        } else if (primitiveType.equals(long.class)) {
+            return 0L;
+        } else if (primitiveType.equals(float.class)) {
+            return 0f;
+        } else if (primitiveType.equals(short.class)) {
+            return (short) 0;
+        } else if (primitiveType.equals(byte.class)) {
+            return (byte) 0;
+        } else if (primitiveType.equals(char.class)) {
+            return '\u0000';
+        }
+        return null;
     }
 }

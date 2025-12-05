@@ -2,6 +2,7 @@ package etu.sprint.framework.scanner;
 
 import etu.sprint.framework.annotation.AnnotationType;
 import etu.sprint.framework.annotation.AnnotationMethod;
+import etu.sprint.framework.annotation.MyRequestParam;
 
 import java.io.File;
 import java.net.URL;
@@ -26,7 +27,21 @@ public class ScannerController {
                 if (method.isAnnotationPresent(AnnotationMethod.class)) {
                     AnnotationMethod am = method.getAnnotation(AnnotationMethod.class);
                     String fullPath = prefix + am.value();
-                    routes.put(fullPath, new MethodMapping(controller, method, fullPath));
+
+                    // Inspect parameters for @MyRequestParam and build index->name map
+                    java.lang.reflect.Parameter[] params = method.getParameters();
+                    Map<Integer, String> paramMap = new HashMap<>();
+                    for (int i = 0; i < params.length; i++) {
+                        MyRequestParam rpa = params[i].getAnnotation(MyRequestParam.class);
+                        if (rpa != null) {
+                            String name = rpa.name();
+                            if (name != null && !name.isEmpty()) {
+                                paramMap.put(i, name);
+                            }
+                        }
+                    }
+
+                    routes.put(fullPath, new MethodMapping(controller, method, fullPath, paramMap));
                     System.out.println("Mapped route: " + fullPath + " -> " + controller.getName() + "." + method.getName());
                 }
             }
