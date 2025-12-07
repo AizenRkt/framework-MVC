@@ -75,13 +75,13 @@ public class FrontServlet extends HttpServlet {
                 .forward(request, response);
     }
 
-    private MethodMapping findMatchingRoute(String url, Map<String, MethodMapping> routes, Map<String, String> pathVariables) {
-        // Vérifier d'abord les correspondances exactes
+    private MethodMapping findMatchingRoute(String url, Map<String, MethodMapping> routes, Map<String, String> pathVariables) throws ServletException {
+        //verifier d'abord les correspondances exactes
         if (routes.containsKey(url)) {
             return routes.get(url);
         }
 
-        // Ensuite, vérifier les correspondances dynamiques (construire un regex robuste)
+        //verifier les correspondances dynamiques
         for (Map.Entry<String, MethodMapping> entry : routes.entrySet()) {
             String routeKey = entry.getKey();
             String regex = "^" + routeKey.replaceAll("\\{[^/]+\\}", "([^/]+)") + "$";
@@ -111,6 +111,11 @@ public class FrontServlet extends HttpServlet {
                         // (le request utilisé ici sera celui passé dans defaultServe)
                     }
                 }
+
+                if (varNames.size() != matcher.groupCount()) {
+                    throw new ServletException("Path variable manquante pour " + routeKey);
+                }
+
 
                 return mapping;
             }
@@ -159,15 +164,15 @@ public class FrontServlet extends HttpServlet {
             }
         }
 
-        // Mapping des paramètres annotés @MyRequestParam
         Map<Integer, String> annotatedParams = mapping.getRequestParamNames();
 
         int varIndex = 0;
 
         for (int i = 0; i < parameters.length; i++) {
             Class<?> pType = parameterTypes[i];
+            Object finalValue = null;
 
-            // Injection spéciale : HttpServletRequest / HttpServletResponse
+            //Injection spéciale : HttpServletRequest / HttpServletResponse
             if (HttpServletRequest.class.isAssignableFrom(pType)) {
                 parameters[i] = request;
                 continue;
@@ -177,32 +182,40 @@ public class FrontServlet extends HttpServlet {
                 continue;
             }
 
-            // Priorité : paramètres annotés @MyRequestParam
-            if (annotatedParams != null && annotatedParams.containsKey(i)) {
-                String reqName = annotatedParams.get(i);
-                String value = request.getParameter(reqName);
-                if (value == null) value = pathVariables.get(reqName);
-
-                parameters[i] = convertType(value, pType);
+            //PRIORITÉ 1 : @MyRequestParam(name = "x")
+            String annotatedName = annotatedParams.get(i);
+            if (annotatedName != null) {
+                String val = request.getParameter(annotatedName);
+                if (val == null) val = pathVariables.get(annotatedName);
+                finalValue = convertType(val, pType);
+                parameters[i] = finalValue;
                 continue;
             }
 
-            // Ensuite : variables de chemin {id}, {slug}, etc.
+            //PRIORITÉ 2 : Path variables dans l’ordre
             if (varIndex < varNames.size()) {
-                String name = varNames.get(varIndex++);
-                String value = pathVariables.get(name);
-                parameters[i] = convertType(value, pType);
+                String varName = varNames.get(varIndex++);
+                String val = pathVariables.get(varName);
+                finalValue = convertType(val, pType);
+                parameters[i] = finalValue;
                 continue;
             }
 
-            // Sinon : valeur par défaut
+            //PRIORITÉ 3 : Paramètres GET/POST standards
+            String paramName = parameterTypes[i].getSimpleName().toLowerCase(); 
+            String val = request.getParameter(paramName);
+            if (val != null) {
+                parameters[i] = convertType(val, pType);
+                continue;
+            }
+
+            //Valeur par défaut ou null
             if (pType.isPrimitive()) {
                 parameters[i] = defaultPrimitiveValue(pType);
             } else {
                 parameters[i] = null;
             }
         }
-
 
         Object result = method.invoke(instance, parameters);
 
