@@ -7,19 +7,24 @@ import java.util.Map;
 public class MethodMapping {
     private final Class<?> controller;
     private final Method method;
-    private final String urlPattern; // Nouveau champ pour le modèle d'URL dynamique
-    // Map parameter index -> request parameter name (from @MyRequestParam)
+    private final String urlPattern; 
     private final Map<Integer, String> requestParamNames;
+    private final String httpMethod; 
 
-    public MethodMapping(Class<?> controller, Method method, String urlPattern) {
-        this(controller, method, urlPattern, Collections.emptyMap());
-    }
-
-    public MethodMapping(Class<?> controller, Method method, String urlPattern, Map<Integer, String> requestParamNames) {
+    public MethodMapping(Class<?> controller, Method method, String urlPattern, Map<Integer, String> requestParamNames, String httpMethod) {
         this.controller = controller;
         this.method = method;
         this.urlPattern = urlPattern;
         this.requestParamNames = requestParamNames == null ? Collections.emptyMap() : requestParamNames;
+        this.httpMethod = httpMethod == null ? "GET" : httpMethod.toUpperCase(); 
+    }
+
+    public MethodMapping(Class<?> controller, Method method, String urlPattern) {
+        this(controller, method, urlPattern, Collections.emptyMap(), "GET");
+    }
+
+    public MethodMapping(Class<?> controller, Method method, String urlPattern, Map<Integer, String> requestParamNames) {
+        this(controller, method, urlPattern, requestParamNames, "GET");
     }
 
     public Class<?> getController() {
@@ -36,5 +41,9 @@ public class MethodMapping {
 
     public Map<Integer, String> getRequestParamNames() {
         return requestParamNames;
+    }
+
+    public String getHttpMethod() { // <-- Getter pour la méthode HTTP
+        return httpMethod;
     }
 }
