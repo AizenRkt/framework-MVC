@@ -1,6 +1,7 @@
 package etu.sprint.framework.scanner;
 
 import etu.sprint.framework.annotation.AnnotationType;
+import etu.sprint.framework.annotation.HttpMethod;
 import etu.sprint.framework.annotation.AnnotationMethod;
 import etu.sprint.framework.annotation.MyRequestParam;
 
@@ -41,8 +42,13 @@ public class ScannerController {
                         }
                     }
 
-                    routes.put(fullPath, new MethodMapping(controller, method, fullPath, paramMap));
-                    System.out.println("Mapped route: " + fullPath + " -> " + controller.getName() + "." + method.getName());
+                    HttpMethod http = method.getAnnotation(HttpMethod.class);
+                    String httpMethod = (http != null) ? http.value().toUpperCase() : "GET";
+
+                    String key = httpMethod + ":" + fullPath;
+
+                    routes.put(key, new MethodMapping(controller, method, fullPath, paramMap, httpMethod));
+                    System.out.println("Mapped route: " + fullPath + " [" + httpMethod + "] -> " + controller.getName() + "." + method.getName());
                 }
             }
         }

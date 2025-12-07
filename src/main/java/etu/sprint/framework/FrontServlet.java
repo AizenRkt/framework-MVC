@@ -75,7 +75,7 @@ public class FrontServlet extends HttpServlet {
                 .forward(request, response);
     }
 
-    private MethodMapping findMatchingRoute(String url, Map<String, MethodMapping> routes, Map<String, String> pathVariables) throws ServletException {
+    /*private MethodMapping findMatchingRoute(String url, Map<String, MethodMapping> routes, Map<String, String> pathVariables) throws ServletException {
         //verifier d'abord les correspondances exactes
         if (routes.containsKey(url)) {
             return routes.get(url);
@@ -121,22 +121,92 @@ public class FrontServlet extends HttpServlet {
             }
         }
         return null;
+    }*/
+
+    private MethodMapping findMatchingRoute(String url, String requestMethod, Map<String, MethodMapping> routes, Map<String, String> pathVariables) throws ServletException {
+        // Vérifier les correspondances exactes avec méthode HTTP
+        String keyExact = requestMethod + ":" + url;
+        if (routes.containsKey(keyExact)) {
+            return routes.get(keyExact);
+        }
+
+        // Vérifier les correspondances dynamiques (avec {id}, etc.)
+        for (Map.Entry<String, MethodMapping> entry : routes.entrySet()) {
+            String routeKey = entry.getKey();
+
+            // Filtrer uniquement les routes correspondant à la méthode HTTP de la requête
+            if (!routeKey.startsWith(requestMethod + ":")) {
+                continue;
+            }
+
+            // Retirer la méthode HTTP pour tester l'URL seule
+            String routeUrl = routeKey.substring(requestMethod.length() + 1);
+
+            // Générer le regex pour matcher les variables {x}
+            String regex = "^" + routeUrl.replaceAll("\\{[^/]+\\}", "([^/]+)") + "$";
+            Pattern pattern = Pattern.compile(regex);
+            Matcher matcher = pattern.matcher(url);
+
+            if (matcher.matches()) {
+                MethodMapping mapping = entry.getValue();
+
+                // Récupérer les noms des variables dans l'ordre
+                List<String> varNames = new ArrayList<>();
+                Matcher nameMatcher = Pattern.compile("\\{([^/}]+)\\}").matcher(routeUrl);
+                while (nameMatcher.find()) {
+                    varNames.add(nameMatcher.group(1));
+                }
+
+                // Associer chaque groupe regex (1-based) au nom de variable correspondant
+                for (int i = 0; i < varNames.size(); i++) {
+                    String value = null;
+                    try {
+                        value = matcher.group(i + 1);
+                    } catch (IllegalStateException | IndexOutOfBoundsException ignored) {}
+                    if (value != null) {
+                        pathVariables.put(varNames.get(i), value);
+                    }
+                }
+
+                return mapping;
+            }
+        }
+
+        return null;
     }
 
     protected void defaultServe(HttpServletRequest request, HttpServletResponse response) throws IOException, InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchMethodException, SecurityException, ServletException {
+
         response.setContentType("text/html;charset=UTF-8");
         String url = request.getRequestURI().substring(request.getContextPath().length());
-
-        ServletContext context = getServletContext();
-        Map<String, MethodMapping> routes = (Map<String, MethodMapping>) context.getAttribute("ROUTES");
+        Map<String, MethodMapping> routes = (Map<String, MethodMapping>) getServletContext().getAttribute("ROUTES");
         Map<String, String> pathVariables = new HashMap<>();
 
-        MethodMapping mapping = findMatchingRoute(url, routes, pathVariables);
+        String requestMethod = request.getMethod().toUpperCase();
+        String key = requestMethod + ":" + url;
+
+        MethodMapping mapping = routes.get(key);
+        if (mapping == null) {
+            mapping = findMatchingRoute(url, requestMethod, routes, pathVariables);
+        }
 
         if (mapping == null) {
             try (PrintWriter out = response.getWriter()) {
                 out.println("<html><head><title>404</title></head><body>");
                 out.println("<h1>404 - Not found</h1>");
+                out.println("</body></html>");
+            }
+            return;
+        }
+
+        String expectedHttpMethod = mapping.getHttpMethod();
+        if (!requestMethod.equals(expectedHttpMethod)) {
+            response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            try (PrintWriter out = response.getWriter()) {
+                out.println("<html><body>");
+                out.println("<h1>405 - Method Not Allowed</h1>");
+                out.println("<p>Attendu : " + expectedHttpMethod + "</p>");
+                out.println("<p>Reçu : " + requestMethod + "</p>");
                 out.println("</body></html>");
             }
             return;
