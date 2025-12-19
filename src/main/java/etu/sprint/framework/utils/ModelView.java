@@ -6,6 +6,7 @@ public class ModelView {
     
     private String view;
     private HashMap<String, Object> data = new HashMap<>();
+    private Boolean isRedirect = false;
 
     public ModelView() {}
 
@@ -32,4 +33,7 @@ public class ModelView {
     public void addItem(String key, Object value) {
         this.data.put(key, value);
     }
+
+    public boolean isRedirect() { return isRedirect; }
+    public void setRedirect(boolean redirect) { this.isRedirect = redirect; }
 }

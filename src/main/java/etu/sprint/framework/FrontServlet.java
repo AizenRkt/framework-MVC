@@ -75,54 +75,6 @@ public class FrontServlet extends HttpServlet {
                 .forward(request, response);
     }
 
-    /*private MethodMapping findMatchingRoute(String url, Map<String, MethodMapping> routes, Map<String, String> pathVariables) throws ServletException {
-        //verifier d'abord les correspondances exactes
-        if (routes.containsKey(url)) {
-            return routes.get(url);
-        }
-
-        //verifier les correspondances dynamiques
-        for (Map.Entry<String, MethodMapping> entry : routes.entrySet()) {
-            String routeKey = entry.getKey();
-            String regex = "^" + routeKey.replaceAll("\\{[^/]+\\}", "([^/]+)") + "$";
-            Pattern pattern = Pattern.compile(regex);
-            Matcher matcher = pattern.matcher(url);
-
-            if (matcher.matches()) {
-                MethodMapping mapping = entry.getValue();
-
-                // Récupérer les noms des variables dans l'ordre
-                List<String> varNames = new ArrayList<>();
-                Matcher nameMatcher = Pattern.compile("\\{([^/}]+)\\}").matcher(routeKey);
-                while (nameMatcher.find()) {
-                    varNames.add(nameMatcher.group(1));
-                }
-
-                // Associer chaque groupe regex (1-based) au nom de variable correspondant
-                for (int i = 0; i < varNames.size(); i++) {
-                    String value = null;
-                    try {
-                        value = matcher.group(i + 1);
-                    } catch (IllegalStateException | IndexOutOfBoundsException ignored) {}
-                    if (value != null) {
-                        String varName = varNames.get(i);
-                        pathVariables.put(varName, value);
-                        // mettre aussi la variable dans la requête pour que les contrôleurs puissent l'obtenir via request.getAttribute
-                        // (le request utilisé ici sera celui passé dans defaultServe)
-                    }
-                }
-
-                if (varNames.size() != matcher.groupCount()) {
-                    throw new ServletException("Path variable manquante pour " + routeKey);
-                }
-
-
-                return mapping;
-            }
-        }
-        return null;
-    }*/
-
     private MethodMapping findMatchingRoute(String url, String requestMethod, Map<String, MethodMapping> routes, Map<String, String> pathVariables) throws ServletException {
         // Vérifier les correspondances exactes avec méthode HTTP
         String keyExact = requestMethod + ":" + url;
@@ -225,6 +177,14 @@ public class FrontServlet extends HttpServlet {
         Object[] parameters = new Object[method.getParameterCount()];
         Class<?>[] parameterTypes = method.getParameterTypes();
 
+        boolean hasMapParam = false;
+        for (Class<?> pt : parameterTypes) {
+            if (Map.class.isAssignableFrom(pt)) {
+                hasMapParam = true;
+                break;
+            }
+        }
+
         // Obtenir les noms des variables dans l'ordre
         List<String> varNames = new ArrayList<>();
         if (mapping.getUrlPattern() != null) {
@@ -241,7 +201,7 @@ public class FrontServlet extends HttpServlet {
         for (int i = 0; i < parameters.length; i++) {
             Class<?> pType = parameterTypes[i];
             Object finalValue = null;
-
+            
             //Injection spéciale : HttpServletRequest / HttpServletResponse
             if (HttpServletRequest.class.isAssignableFrom(pType)) {
                 parameters[i] = request;
@@ -249,6 +209,11 @@ public class FrontServlet extends HttpServlet {
             }
             if (HttpServletResponse.class.isAssignableFrom(pType)) {
                 parameters[i] = response;
+                continue;
+            }
+
+            if (Map.class.isAssignableFrom(pType)) {
+                parameters[i] = buildRequestMap(request);
                 continue;
             }
 
@@ -308,9 +273,18 @@ public class FrontServlet extends HttpServlet {
                 }
             }
 
-            String v = "/WEB-INF/views/" + modelView.getView();
-            RequestDispatcher rd = request.getRequestDispatcher(v);
-            rd.forward(request, response);
+            // Gestion du redirect ou forward
+            if (modelView.isRedirect()) {
+                String urlRedirect = request.getContextPath() + "/" + modelView.getView();
+                response.sendRedirect(urlRedirect);
+            } else {
+                RequestDispatcher rd = request.getRequestDispatcher("/WEB-INF/views/" + modelView.getView());
+                rd.forward(request, response);
+            }
+
+            // String v = "/WEB-INF/views/" + modelView.getView();
+            // RequestDispatcher rd = request.getRequestDispatcher(v);
+            // rd.forward(request, response);
         } else {
             try (PrintWriter out = response.getWriter()) {
                 out.println("<html><body>");
@@ -358,4 +332,31 @@ public class FrontServlet extends HttpServlet {
         }
         return null;
     }
+
+    private Object getValues(HttpServletRequest request, String key) {
+        String[] values = request.getParameterValues(key);
+
+        if (values == null) {
+            return null;
+        }
+
+        if (values.length == 1) {
+            return values[0];
+        }
+
+        return values;
+    }
+
+    private Map<String, Object> buildRequestMap(HttpServletRequest request) {
+        Map<String, Object> data = new HashMap<>();
+
+        Map<String, String[]> paramMap = request.getParameterMap();
+        for (String key : paramMap.keySet()) {
+            data.put(key, getValues(request, key));
+        }
+
+        return data;
+    }
+
+
 }
