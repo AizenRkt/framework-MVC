@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
+import java.lang.reflect.Field;
 
 import etu.sprint.framework.scanner.*;
 import etu.sprint.framework.utils.*;
@@ -241,6 +242,50 @@ public class FrontServlet extends HttpServlet {
             String val = request.getParameter(paramName);
             if (val != null) {
                 parameters[i] = convertType(val, pType);
+                continue;
+            }
+
+            // SPRINT 8bis : injection d'objet automatique
+            if (!pType.isPrimitive()
+                    && !pType.equals(String.class)
+                    && !Map.class.isAssignableFrom(pType)
+                    && !HttpServletRequest.class.isAssignableFrom(pType)
+                    && !HttpServletResponse.class.isAssignableFrom(pType)) {
+
+                Object obj = pType.getDeclaredConstructor().newInstance();
+
+                for (Field field : pType.getDeclaredFields()) {
+                    field.setAccessible(true);
+
+                    String fieldName = field.getName();
+                    Class<?> fieldType = field.getType();
+
+                    if (List.class.isAssignableFrom(fieldType)) {
+                        String paramValue = request.getParameter(fieldName);
+
+                        if (paramValue != null && !paramValue.isEmpty()) {
+                            String[] values = paramValue.split("\\s*[,;]\\s*");
+
+                            List<String> list = new ArrayList<>();
+                            for (String v : values) {
+                                if (!v.isEmpty()) {
+                                    list.add(v);
+                                }
+                            }
+
+                            field.set(obj, list);
+                        }
+                    } else {
+                        String paramValue = request.getParameter(fieldName);
+                        if (paramValue != null) {
+                            Object converted = convertType(paramValue, fieldType);
+                            field.set(obj, converted);
+                        }
+                    }
+                }
+
+
+                parameters[i] = obj;
                 continue;
             }
 
