@@ -6,6 +6,12 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.annotation.MultipartConfig;
+
+import javax.servlet.http.Part;
+import java.util.Collection;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -23,6 +29,7 @@ import etu.sprint.framework.annotation.MyJson;
 import etu.sprint.framework.scanner.*;
 import etu.sprint.framework.utils.*;
 
+@MultipartConfig
 public class FrontServlet extends HttpServlet {
 
     private Map<String, MethodMapping> routeMap;
@@ -175,6 +182,25 @@ public class FrontServlet extends HttpServlet {
             request.setAttribute(e.getKey(), e.getValue());
         }
 
+        // SPRINT 10 : récupération des fichiers multipart
+        Map<String, FileUpload> uploadedFiles = new HashMap<>();
+
+        if (request.getContentType() != null &&
+            request.getContentType().toLowerCase().startsWith("multipart/")) {
+
+            for (Part part : request.getParts()) {
+                if (part.getSubmittedFileName() != null && !part.getSubmittedFileName().isEmpty()) {
+
+                    FileUpload fu = new FileUpload();
+                    fu.setFileName(part.getSubmittedFileName());
+                    fu.setBytes(part.getInputStream().readAllBytes());
+                    fu.setContentType(part.getContentType());
+
+                    uploadedFiles.put(part.getName(), fu);
+                }
+            }
+        }
+
         // Injecter les variables extraites et objects request/response dans les paramètres de la méthode
         Object[] parameters = new Object[method.getParameterCount()];
         Class<?>[] parameterTypes = method.getParameterTypes();
@@ -204,6 +230,17 @@ public class FrontServlet extends HttpServlet {
             Class<?> pType = parameterTypes[i];
             Object finalValue = null;
             
+            // SPRINT 10 : injection FileUpload
+            if (pType.equals(FileUpload.class)) {
+                // on prend le premier fichier trouvé
+                if (!uploadedFiles.isEmpty()) {
+                    parameters[i] = uploadedFiles.values().iterator().next();
+                } else {
+                    parameters[i] = null;
+                }
+                continue;
+            }
+
             //Injection spéciale : HttpServletRequest / HttpServletResponse
             if (HttpServletRequest.class.isAssignableFrom(pType)) {
                 parameters[i] = request;
