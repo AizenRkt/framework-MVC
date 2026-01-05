@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.lang.reflect.Field;
 
+import etu.sprint.framework.annotation.MyJson;
 import etu.sprint.framework.scanner.*;
 import etu.sprint.framework.utils.*;
 
@@ -298,6 +299,18 @@ public class FrontServlet extends HttpServlet {
         }
 
         Object result = method.invoke(instance, parameters);
+
+        // SPRINT 9 : gestion JSON
+        if (method.isAnnotationPresent(MyJson.class)) {
+
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+
+            String json = JsonBinder.toJson(result);
+            response.getWriter().write(json);
+
+            return;
+        }
 
         if (method.getReturnType().equals(String.class)) {
             try (PrintWriter out = response.getWriter()) {
